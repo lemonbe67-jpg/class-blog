@@ -22,15 +22,20 @@ import {
   Upload,
   Link,
   Eye,
+  EyeOff,
+  Lock,
   Check,
   HelpCircle,
 } from 'lucide-react';
 import { BlogPost, ContentBlock, QuoteStyle, BlogCategory } from '../types/blog';
-import { CurrentUser, PRESET_USERS } from '../utils/storage';
-import cafeImg from '../assets/images/cafe_interior_seongsu_1792668836668.jpg';
-import jejuImg from '../assets/images/jeju_ocean_sunset_1792668835781.jpg';
-import techImg from '../assets/images/tech_minimal_workspace_1792668837110.jpg';
-import foodImg from '../assets/images/korean_gourmet_cuisine_1792668839209.jpg';
+import { CurrentUser } from '../utils/storage';
+import sportsImg from '../assets/images/sports_day_school_1792673618842.jpg';
+import readingImg from '../assets/images/reading_story_book_1792673619053.jpg';
+import poetryImg from '../assets/images/autumn_leaves_poetry_1792673619279.jpg';
+import heritageImg from '../assets/images/korean_heritage_tour_1792673620377.jpg';
+import rocketImg from '../assets/images/recycled_craft_rocket_1792673620092.jpg';
+import beanImg from '../assets/images/sprouting_bean_plant_1792673620569.jpg';
+import { RichTextContentEditable } from './RichTextContentEditable';
 
 interface PostEditorProps {
   initialPost?: BlogPost | null;
@@ -49,10 +54,12 @@ const CATEGORIES: Exclude<BlogCategory, '전체'>[] = [
 ];
 
 const PRESET_IMAGES = [
-  { label: '성수 카페', url: cafeImg },
-  { label: '제주 노을', url: jejuImg },
-  { label: '데스크셋업', url: techImg },
-  { label: '정갈한 밥상', url: foodImg },
+  { label: '가을 운동회', url: sportsImg },
+  { label: '동화책 도서관', url: readingImg },
+  { label: '가을 낙엽 동시', url: poetryImg },
+  { label: '문화재 답사', url: heritageImg },
+  { label: '우주선 만들기', url: rocketImg },
+  { label: '강낭콩 새싹', url: beanImg },
 ];
 
 const TEXT_COLORS = [
@@ -81,6 +88,8 @@ export const PostEditor: React.FC<PostEditorProps> = ({
 }) => {
   // Post meta state
   const [author, setAuthor] = useState(initialPost?.author || currentUser.name);
+  const [password, setPassword] = useState(initialPost?.password || '');
+  const [showPassword, setShowPassword] = useState(false);
   const [authorAvatar, setAuthorAvatar] = useState(
     initialPost?.authorAvatar || currentUser.avatar
   );
@@ -124,9 +133,90 @@ export const PostEditor: React.FC<PostEditorProps> = ({
   const [imageUrlInput, setImageUrlInput] = useState('');
   const [videoUrlInput, setVideoUrlInput] = useState('');
   const [videoTitleInput, setVideoTitleInput] = useState('');
-  const [errors, setErrors] = useState<{ author?: string; title?: string }>({});
+  const [errors, setErrors] = useState<{ author?: string; title?: string; password?: string }>({});
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [floatingSelection, setFloatingSelection] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const triggerContentSync = () => {
+    const sel = window.getSelection();
+    if (sel && sel.anchorNode) {
+      let node: Node | null = sel.anchorNode;
+      while (node && !(node instanceof HTMLElement && node.isContentEditable)) {
+        node = node.parentNode;
+      }
+      if (node && node instanceof HTMLElement) {
+        node.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+  };
+
+  const formatSelection = (command: string, value?: string) => {
+    const sel = window.getSelection();
+    const hasSelectedText = sel && !sel.isCollapsed && sel.toString().trim().length > 0;
+
+    if (command === 'fontSize') {
+      if (hasSelectedText && sel) {
+        const range = sel.getRangeAt(0);
+        const span = document.createElement('span');
+        span.style.fontSize = value || '16px';
+        try {
+          const fragment = range.extractContents();
+          span.appendChild(fragment);
+          range.insertNode(span);
+          sel.removeAllRanges();
+          const newRange = document.createRange();
+          newRange.selectNodeContents(span);
+          sel.addRange(newRange);
+          triggerContentSync();
+        } catch (err) {
+          console.warn('fontSize apply error:', err);
+        }
+      } else if (activeBlock) {
+        updateBlock(activeBlock.id, { fontSize: value as any });
+      }
+      return;
+    }
+
+    if (command === 'hiliteColor') {
+      if (hasSelectedText) {
+        try {
+          document.execCommand('hiliteColor', false, value || 'transparent');
+        } catch {
+          document.execCommand('backColor', false, value || 'transparent');
+        }
+        triggerContentSync();
+      } else if (activeBlock) {
+        updateBlock(activeBlock.id, { bgColor: value });
+      }
+      return;
+    }
+
+    if (command === 'foreColor') {
+      if (hasSelectedText) {
+        document.execCommand('foreColor', false, value);
+        triggerContentSync();
+      } else if (activeBlock) {
+        updateBlock(activeBlock.id, { color: value });
+      }
+      return;
+    }
+
+    if (hasSelectedText) {
+      document.execCommand(command, false, value);
+      triggerContentSync();
+    } else if (activeBlock) {
+      if (command === 'bold') updateBlock(activeBlock.id, { isBold: !activeBlock.isBold });
+      else if (command === 'italic') updateBlock(activeBlock.id, { isItalic: !activeBlock.isItalic });
+      else if (command === 'underline') updateBlock(activeBlock.id, { isUnderline: !activeBlock.isUnderline });
+      else if (command === 'strikeThrough') updateBlock(activeBlock.id, { isStrikethrough: !activeBlock.isStrikethrough });
+    }
+  };
 
   // Helper to update specific block
   const updateBlock = (id: string, updates: Partial<ContentBlock>) => {
@@ -278,20 +368,26 @@ export const PostEditor: React.FC<PostEditorProps> = ({
 
   // Validation & Save
   const handlePublish = () => {
-    const errs: { author?: string; title?: string } = {};
+    const errs: { author?: string; title?: string; password?: string } = {};
     if (!author.trim()) errs.author = '작성자 이름을 반드시 입력해주세요.';
     if (!title.trim()) errs.title = '제목을 입력해주세요.';
+    if (!password.trim()) {
+      errs.password = '추후 수정을 위한 비밀번호를 입력해주세요.';
+    } else if (password.trim().length < 4) {
+      errs.password = '비밀번호는 최소 4자리 이상 입력해주세요.';
+    }
 
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
       return;
     }
 
-    // Generate summary from text blocks
+    // Generate summary from text blocks (strip HTML tags)
     const textSnippet = blocks
       .filter((b) => b.type === 'text' && b.text)
-      .map((b) => b.text)
+      .map((b) => (b.text || '').replace(/<[^>]+>/g, ' '))
       .join(' ')
+      .trim()
       .slice(0, 150);
 
     const now = new Date();
@@ -314,7 +410,8 @@ export const PostEditor: React.FC<PostEditorProps> = ({
       category,
       author: author.trim(),
       authorAvatar: authorAvatar || currentUser.avatar,
-      authorBio: currentUser.bio || '네이버 블로그 에디터',
+      authorBio: currentUser.bio || '우리 반 블로그 작성자',
+      password: password.trim(),
       createdAt: initialPost?.createdAt || formattedDate,
       updatedAt: initialPost ? formattedDate : undefined,
       thumbnailUrl: finalThumbnail || undefined,
@@ -450,12 +547,18 @@ export const PostEditor: React.FC<PostEditorProps> = ({
               {/* Font Size Hierarchy */}
               <select
                 value={activeBlock.fontSize || 'body1'}
-                onChange={(e) =>
-                  updateBlock(activeBlock.id, {
-                    fontSize: e.target.value as any,
-                  })
-                }
+                onChange={(e) => {
+                  const sizeMap: Record<string, string> = {
+                    title1: '28px',
+                    title2: '22px',
+                    body1: '17px',
+                    body2: '15px',
+                    body3: '13px',
+                  };
+                  formatSelection('fontSize', sizeMap[e.target.value] || '17px');
+                }}
                 className="text-xs bg-stone-50 border border-stone-200 rounded px-2 py-1 text-stone-700 cursor-pointer"
+                title="글자 크기 (선택 글자 또는 문단)"
               >
                 <option value="title1">제목1 (28px)</option>
                 <option value="title2">제목2 (22px)</option>
@@ -467,15 +570,17 @@ export const PostEditor: React.FC<PostEditorProps> = ({
               {/* Text Alignments */}
               <div className="flex items-center gap-0.5 bg-stone-50 p-0.5 rounded border border-stone-200">
                 <button
+                  type="button"
                   onClick={() => updateBlock(activeBlock.id, { align: 'left' })}
                   className={`p-1 rounded cursor-pointer ${
-                    activeBlock.align === 'left' ? 'bg-white shadow-xs text-stone-900' : 'text-stone-500'
+                    activeBlock.align === 'left' ? 'bg-white shadow-xs text-stone-900 font-bold' : 'text-stone-500'
                   }`}
                   title="왼쪽 정렬"
                 >
                   <AlignLeft className="w-3.5 h-3.5" />
                 </button>
                 <button
+                  type="button"
                   onClick={() => updateBlock(activeBlock.id, { align: 'center' })}
                   className={`p-1 rounded cursor-pointer ${
                     activeBlock.align === 'center' ? 'bg-white shadow-xs text-[#03C75A] font-bold' : 'text-stone-500'
@@ -485,18 +590,20 @@ export const PostEditor: React.FC<PostEditorProps> = ({
                   <AlignCenter className="w-3.5 h-3.5" />
                 </button>
                 <button
+                  type="button"
                   onClick={() => updateBlock(activeBlock.id, { align: 'right' })}
                   className={`p-1 rounded cursor-pointer ${
-                    activeBlock.align === 'right' ? 'bg-white shadow-xs text-stone-900' : 'text-stone-500'
+                    activeBlock.align === 'right' ? 'bg-white shadow-xs text-stone-900 font-bold' : 'text-stone-500'
                   }`}
                   title="오른쪽 정렬"
                 >
                   <AlignRight className="w-3.5 h-3.5" />
                 </button>
                 <button
+                  type="button"
                   onClick={() => updateBlock(activeBlock.id, { align: 'justify' })}
                   className={`p-1 rounded cursor-pointer ${
-                    activeBlock.align === 'justify' ? 'bg-white shadow-xs text-stone-900' : 'text-stone-500'
+                    activeBlock.align === 'justify' ? 'bg-white shadow-xs text-stone-900 font-bold' : 'text-stone-500'
                   }`}
                   title="양쪽 맞춤"
                 >
@@ -504,57 +611,49 @@ export const PostEditor: React.FC<PostEditorProps> = ({
                 </button>
               </div>
 
-              {/* Bold, Italic, Underline */}
+              {/* Bold, Italic, Underline, Strikethrough */}
               <div className="flex items-center gap-0.5 bg-stone-50 p-0.5 rounded border border-stone-200">
                 <button
-                  onClick={() =>
-                    updateBlock(activeBlock.id, {
-                      isBold: !activeBlock.isBold,
-                    })
-                  }
-                  className={`p-1 rounded cursor-pointer ${
-                    activeBlock.isBold ? 'bg-white shadow-xs text-[#03C75A] font-bold' : 'text-stone-600'
-                  }`}
-                  title="굵게"
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    formatSelection('bold');
+                  }}
+                  className="p-1 rounded cursor-pointer hover:bg-stone-200 text-stone-700"
+                  title="선택한 글자 굵게 (드래그 지원)"
                 >
                   <Bold className="w-3.5 h-3.5" />
                 </button>
                 <button
-                  onClick={() =>
-                    updateBlock(activeBlock.id, {
-                      isItalic: !activeBlock.isItalic,
-                    })
-                  }
-                  className={`p-1 rounded cursor-pointer ${
-                    activeBlock.isItalic ? 'bg-white shadow-xs text-[#03C75A]' : 'text-stone-600'
-                  }`}
-                  title="기울임"
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    formatSelection('italic');
+                  }}
+                  className="p-1 rounded cursor-pointer hover:bg-stone-200 text-stone-700"
+                  title="선택한 글자 기울임 (드래그 지원)"
                 >
                   <Italic className="w-3.5 h-3.5" />
                 </button>
                 <button
-                  onClick={() =>
-                    updateBlock(activeBlock.id, {
-                      isUnderline: !activeBlock.isUnderline,
-                    })
-                  }
-                  className={`p-1 rounded cursor-pointer ${
-                    activeBlock.isUnderline ? 'bg-white shadow-xs text-[#03C75A]' : 'text-stone-600'
-                  }`}
-                  title="밑줄"
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    formatSelection('underline');
+                  }}
+                  className="p-1 rounded cursor-pointer hover:bg-stone-200 text-stone-700"
+                  title="선택한 글자 밑줄 (드래그 지원)"
                 >
                   <Underline className="w-3.5 h-3.5" />
                 </button>
                 <button
-                  onClick={() =>
-                    updateBlock(activeBlock.id, {
-                      isStrikethrough: !activeBlock.isStrikethrough,
-                    })
-                  }
-                  className={`p-1 rounded cursor-pointer ${
-                    activeBlock.isStrikethrough ? 'bg-white shadow-xs text-[#03C75A]' : 'text-stone-600'
-                  }`}
-                  title="취소선"
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    formatSelection('strikeThrough');
+                  }}
+                  className="p-1 rounded cursor-pointer hover:bg-stone-200 text-stone-700"
+                  title="선택한 글자 취소선 (드래그 지원)"
                 >
                   <Strikethrough className="w-3.5 h-3.5" />
                 </button>
@@ -567,12 +666,14 @@ export const PostEditor: React.FC<PostEditorProps> = ({
                   {TEXT_COLORS.map((col) => (
                     <button
                       key={col.value}
-                      onClick={() => updateBlock(activeBlock.id, { color: col.value })}
-                      title={col.name}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        formatSelection('foreColor', col.value);
+                      }}
+                      title={`${col.name} (드래그한 글자 색상)`}
                       style={{ backgroundColor: col.value }}
-                      className={`w-4 h-4 rounded-full border ${
-                        activeBlock.color === col.value ? 'ring-2 ring-stone-900 ring-offset-1' : 'border-stone-300'
-                      }`}
+                      className="w-4 h-4 rounded-full border border-stone-300 hover:scale-110 transition-transform cursor-pointer"
                     />
                   ))}
                 </div>
@@ -585,12 +686,14 @@ export const PostEditor: React.FC<PostEditorProps> = ({
                   {BG_COLORS.map((bg) => (
                     <button
                       key={bg.value}
-                      onClick={() => updateBlock(activeBlock.id, { bgColor: bg.value })}
-                      title={bg.name}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        formatSelection('hiliteColor', bg.value);
+                      }}
+                      title={`${bg.name} (드래그한 글자 배경색)`}
                       style={{ backgroundColor: bg.value === 'transparent' ? '#fff' : bg.value }}
-                      className={`w-4 h-4 rounded-full border ${
-                        activeBlock.bgColor === bg.value ? 'ring-2 ring-stone-900 ring-offset-1' : 'border-stone-300'
-                      }`}
+                      className="w-4 h-4 rounded-full border border-stone-300 hover:scale-110 transition-transform cursor-pointer"
                     />
                   ))}
                 </div>
@@ -629,9 +732,9 @@ export const PostEditor: React.FC<PostEditorProps> = ({
           {activeTab === 'editor' ? (
             /* ================= EDITOR VIEW ================= */
             <div className="space-y-6">
-              {/* Metadata Inputs (Mandatory Author, Category) */}
+              {/* Metadata Inputs (Mandatory Author, Category, Modification Password) */}
               <div className="space-y-4 pb-6 border-b border-stone-100">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Category Selector */}
                   <div>
                     <label className="block text-xs font-semibold text-stone-600 mb-1.5">
@@ -654,10 +757,10 @@ export const PostEditor: React.FC<PostEditorProps> = ({
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="text-xs font-semibold text-stone-600">
-                        작성자 이름 <span className="text-rose-500">*필수</span>
+                        작성자 이름 <span className="text-rose-500 font-bold">*필수</span>
                       </label>
                       <span className="text-[11px] text-stone-400">
-                        다중 사용자 지원
+                        다중 사용자
                       </span>
                     </div>
                     <div className="flex gap-2">
@@ -666,36 +769,60 @@ export const PostEditor: React.FC<PostEditorProps> = ({
                         value={author}
                         onChange={(e) => {
                           setAuthor(e.target.value);
-                          if (errors.author) setErrors({ ...errors, author: undefined });
+                          if (errors.author) setErrors((prev) => ({ ...prev, author: undefined }));
                         }}
                         placeholder="작성자 닉네임 입력 (필수)"
-                        className={`flex-1 text-xs sm:text-sm bg-stone-50 border rounded-lg px-3 py-2 text-stone-800 focus:bg-white focus:outline-none focus:border-[#03C75A] ${
-                          errors.author ? 'border-rose-400 bg-rose-50/50' : 'border-stone-200'
+                        className={`w-full text-xs sm:text-sm bg-stone-50 border rounded-lg px-3 py-2 text-stone-800 focus:bg-white focus:outline-none focus:border-[#03C75A] ${
+                          errors.author ? 'border-rose-400 bg-rose-50/50 ring-1 ring-rose-400' : 'border-stone-200'
                         }`}
                       />
                     </div>
                     {errors.author && (
-                      <p className="text-[11px] text-rose-500 mt-1">{errors.author}</p>
+                      <p className="text-[11px] text-rose-500 mt-1 font-medium">{errors.author}</p>
                     )}
                   </div>
-                </div>
 
-                {/* Preset author quick buttons */}
-                <div className="flex items-center gap-1.5 overflow-x-auto text-xs text-stone-500 pt-1">
-                  <span className="text-[11px] text-stone-400 whitespace-nowrap">추천 닉네임:</span>
-                  {PRESET_USERS.map((u) => (
-                    <button
-                      key={u.id}
-                      type="button"
-                      onClick={() => {
-                        setAuthor(u.name);
-                        setAuthorAvatar(u.avatar);
-                      }}
-                      className="px-2 py-0.5 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 text-[11px] transition-colors whitespace-nowrap cursor-pointer"
-                    >
-                      {u.name}
-                    </button>
-                  ))}
+                  {/* Password Input for Future Editing/Modification */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-semibold text-stone-600 flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-[#03C75A]" />
+                        <span>수정 비밀번호</span>
+                        <span className="text-rose-500 font-bold">*필수</span>
+                      </label>
+                      <span className="text-[11px] text-stone-400">
+                        4자리 이상
+                      </span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={password}
+                        onChange={(e) => {
+                          setPassword(e.target.value);
+                          if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
+                        }}
+                        placeholder="수정·삭제용 비밀번호 (예: 1234)"
+                        maxLength={20}
+                        className={`w-full text-xs sm:text-sm bg-stone-50 border rounded-lg pl-3 pr-8 py-2 text-stone-800 focus:bg-white focus:outline-none focus:border-[#03C75A] ${
+                          errors.password ? 'border-rose-400 bg-rose-50/50 ring-1 ring-rose-400' : 'border-stone-200'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-stone-600 transition-colors cursor-pointer"
+                        title={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
+                      >
+                        {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                    {errors.password ? (
+                      <p className="text-[11px] text-rose-500 mt-1 font-medium">{errors.password}</p>
+                    ) : (
+                      <p className="text-[11px] text-stone-400 mt-1">글 수정 및 삭제 시 본인 확인에 사용됩니다.</p>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -771,35 +898,27 @@ export const PostEditor: React.FC<PostEditorProps> = ({
                         </button>
                       </div>
 
-                      {/* BLOCK: TEXT */}
+                      {/* BLOCK: TEXT (Rich text with drag selection support) */}
                       {block.type === 'text' && (
-                        <textarea
-                          value={block.text || ''}
-                          onChange={(e) => updateBlock(block.id, { text: e.target.value })}
-                          placeholder="내용을 입력하세요..."
-                          rows={Math.max(2, (block.text || '').split('\n').length)}
-                          style={{
-                            textAlign: block.align || 'center',
-                            color: block.color || '#1C1917',
-                            backgroundColor: block.bgColor === 'transparent' ? 'transparent' : block.bgColor,
-                            fontWeight: block.isBold ? 700 : 400,
-                            fontStyle: block.isItalic ? 'italic' : 'normal',
-                            textDecoration: `${block.isUnderline ? 'underline' : ''} ${
-                              block.isStrikethrough ? 'line-through' : ''
-                            }`.trim(),
-                          }}
-                          className={`w-full resize-none border-none outline-none leading-relaxed focus:ring-0 ${
-                            block.fontSize === 'title1'
-                              ? 'text-2xl font-bold'
-                              : block.fontSize === 'title2'
-                              ? 'text-xl font-bold'
-                              : block.fontSize === 'body1'
-                              ? 'text-base sm:text-lg'
-                              : block.fontSize === 'body2'
-                              ? 'text-sm sm:text-base'
-                              : 'text-xs sm:text-sm'
-                          }`}
-                        />
+                        <div className="w-full">
+                          <RichTextContentEditable
+                            initialHtml={block.text || ''}
+                            placeholder="내용을 입력하세요... (마우스로 글자를 드래그하여 부분 서식을 지정할 수 있습니다)"
+                            align={block.align || 'center'}
+                            fontSize={block.fontSize || 'body1'}
+                            onChange={(html) => updateBlock(block.id, { text: html })}
+                            onFocus={() => setActiveBlockId(block.id)}
+                            onSelectionChange={(hasSel, rect) => {
+                              if (hasSel && rect) {
+                                const x = Math.max(160, Math.min(window.innerWidth - 180, rect.left + rect.width / 2));
+                                const y = Math.max(70, rect.top - 50);
+                                setFloatingSelection({ visible: true, x, y });
+                              } else {
+                                setFloatingSelection(null);
+                              }
+                            }}
+                          />
+                        </div>
                       )}
 
                       {/* BLOCK: IMAGE */}
@@ -1078,18 +1197,14 @@ export const PostEditor: React.FC<PostEditorProps> = ({
                 {blocks.map((block) => (
                   <div key={block.id}>
                     {block.type === 'text' && (
-                      <p
+                      <div
                         style={{
                           textAlign: block.align || 'center',
                           color: block.color || '#1C1917',
                           backgroundColor: block.bgColor === 'transparent' ? 'transparent' : block.bgColor,
-                          fontWeight: block.isBold ? 700 : 400,
-                          fontStyle: block.isItalic ? 'italic' : 'normal',
-                          textDecoration: `${block.isUnderline ? 'underline' : ''} ${
-                            block.isStrikethrough ? 'line-through' : ''
-                          }`.trim(),
+                          lineHeight: 1.8,
                         }}
-                        className={`whitespace-pre-line leading-relaxed ${
+                        className={`leading-relaxed ${
                           block.fontSize === 'title1'
                             ? 'text-2xl font-bold my-4'
                             : block.fontSize === 'title2'
@@ -1098,9 +1213,8 @@ export const PostEditor: React.FC<PostEditorProps> = ({
                             ? 'text-base sm:text-lg my-2'
                             : 'text-sm sm:text-base my-2'
                         }`}
-                      >
-                        {block.text}
-                      </p>
+                        dangerouslySetInnerHTML={{ __html: block.text || '' }}
+                      />
                     )}
 
                     {block.type === 'image' && (
@@ -1376,6 +1490,140 @@ export const PostEditor: React.FC<PostEditorProps> = ({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Selection Quick Toolbar (appears directly above dragged mouse selection) */}
+      {floatingSelection?.visible && (
+        <div
+          style={{
+            position: 'fixed',
+            top: floatingSelection.y,
+            left: floatingSelection.x,
+            transform: 'translateX(-50%)',
+          }}
+          className="z-70 flex items-center gap-1 bg-stone-900 text-white px-2.5 py-1.5 rounded-lg shadow-2xl border border-stone-700 text-xs animate-in fade-in zoom-in-95 duration-100 select-none"
+        >
+          <span className="text-[10px] text-stone-400 font-semibold mr-1">드래그 서식:</span>
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              formatSelection('bold');
+            }}
+            className="p-1 rounded hover:bg-stone-800 text-white font-bold"
+            title="굵게 (B)"
+          >
+            <Bold className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              formatSelection('italic');
+            }}
+            className="p-1 rounded hover:bg-stone-800 text-white"
+            title="기울임 (I)"
+          >
+            <Italic className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              formatSelection('underline');
+            }}
+            className="p-1 rounded hover:bg-stone-800 text-white"
+            title="밑줄 (U)"
+          >
+            <Underline className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              formatSelection('strikeThrough');
+            }}
+            className="p-1 rounded hover:bg-stone-800 text-white"
+            title="취소선"
+          >
+            <Strikethrough className="w-3.5 h-3.5" />
+          </button>
+
+          <span className="w-px h-3.5 bg-stone-700 mx-1" />
+
+          {/* Quick font size buttons */}
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              formatSelection('fontSize', '24px');
+            }}
+            className="px-1.5 py-0.5 rounded hover:bg-stone-800 text-[11px] font-bold"
+            title="글자 크게 (24px)"
+          >
+            대
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              formatSelection('fontSize', '17px');
+            }}
+            className="px-1.5 py-0.5 rounded hover:bg-stone-800 text-[11px]"
+            title="글자 보통 (17px)"
+          >
+            중
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              formatSelection('fontSize', '13px');
+            }}
+            className="px-1.5 py-0.5 rounded hover:bg-stone-800 text-[11px]"
+            title="글자 작게 (13px)"
+          >
+            소
+          </button>
+
+          <span className="w-px h-3.5 bg-stone-700 mx-1" />
+
+          {/* Quick color dots */}
+          <div className="flex items-center gap-1">
+            {TEXT_COLORS.map((col) => (
+              <button
+                key={col.value}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  formatSelection('foreColor', col.value);
+                }}
+                title={`글자색: ${col.name}`}
+                style={{ backgroundColor: col.value }}
+                className="w-3.5 h-3.5 rounded-full border border-stone-600 hover:scale-125 transition-transform"
+              />
+            ))}
+          </div>
+
+          <span className="w-px h-3.5 bg-stone-700 mx-1" />
+
+          {/* Quick highlight dots */}
+          <div className="flex items-center gap-1">
+            {BG_COLORS.slice(1).map((bg) => (
+              <button
+                key={bg.value}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  formatSelection('hiliteColor', bg.value);
+                }}
+                title={`형광펜: ${bg.name}`}
+                style={{ backgroundColor: bg.value }}
+                className="w-3.5 h-3.5 rounded-full border border-stone-600 hover:scale-125 transition-transform"
+              />
+            ))}
           </div>
         </div>
       )}

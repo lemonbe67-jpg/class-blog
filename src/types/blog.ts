@@ -62,6 +62,7 @@ export interface BlogPost {
   isLiked?: boolean;
   comments: Comment[];
   readTimeMinutes: number;
+  password?: string;
 }
 
 export type ViewMode = 'card' | 'list' | 'album';

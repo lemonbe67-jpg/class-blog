@@ -1,7 +1,7 @@
 import { BlogPost, Comment } from '../types/blog';
 import { INITIAL_POSTS } from '../data/initialPosts';
 
-const STORAGE_KEY = 'our_class_blog_posts_v1';
+const STORAGE_KEY = 'our_class_blog_posts_v4';
 const ACTIVE_USER_KEY = 'our_class_blog_active_user_v1';
 
 const CATEGORY_MAP: Record<string, any> = {

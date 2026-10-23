@@ -52,6 +52,9 @@ export const PostDetail: React.FC<PostDetailProps> = ({
   const [isSecret, setIsSecret] = useState(false);
   const [isNeighbor, setIsNeighbor] = useState(false);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  const [passwordModalAction, setPasswordModalAction] = useState<'edit' | 'delete' | null>(null);
+  const [inputPassword, setInputPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
 
   // Find previous & next posts in allPosts
   const currentIndex = allPosts.findIndex((p) => p.id === post.id);
@@ -113,7 +116,15 @@ export const PostDetail: React.FC<PostDetailProps> = ({
             <Share2 className="w-4 h-4" />
           </button>
           <button
-            onClick={() => onEdit(post)}
+            onClick={() => {
+              if (post.password) {
+                setPasswordModalAction('edit');
+                setInputPassword('');
+                setPasswordError('');
+              } else {
+                onEdit(post);
+              }
+            }}
             className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors cursor-pointer"
           >
             <Edit3 className="w-3.5 h-3.5" />
@@ -121,8 +132,14 @@ export const PostDetail: React.FC<PostDetailProps> = ({
           </button>
           <button
             onClick={() => {
-              if (confirm('정말로 이 글을 삭제하시겠습니까?')) {
-                onDelete(post.id);
+              if (post.password) {
+                setPasswordModalAction('delete');
+                setInputPassword('');
+                setPasswordError('');
+              } else {
+                if (confirm('정말로 이 글을 삭제하시겠습니까?')) {
+                  onDelete(post.id);
+                }
               }
             }}
             className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
@@ -208,18 +225,14 @@ export const PostDetail: React.FC<PostDetailProps> = ({
             <div key={block.id}>
               {/* TEXT BLOCK */}
               {block.type === 'text' && (
-                <p
+                <div
                   style={{
                     textAlign: block.align || 'left',
                     color: block.color || '#1C1917',
                     backgroundColor: block.bgColor === 'transparent' ? 'transparent' : block.bgColor,
-                    fontWeight: block.isBold ? 700 : 400,
-                    fontStyle: block.isItalic ? 'italic' : 'normal',
-                    textDecoration: `${block.isUnderline ? 'underline' : ''} ${
-                      block.isStrikethrough ? 'line-through' : ''
-                    }`.trim(),
+                    lineHeight: 1.8,
                   }}
-                  className={`whitespace-pre-line leading-relaxed ${
+                  className={`leading-relaxed ${
                     block.fontSize === 'title1'
                       ? 'text-2xl sm:text-3xl font-bold my-6 text-stone-900'
                       : block.fontSize === 'title2'
@@ -230,9 +243,8 @@ export const PostDetail: React.FC<PostDetailProps> = ({
                       ? 'text-sm sm:text-base my-2'
                       : 'text-xs sm:text-sm my-2'
                   }`}
-                >
-                  {block.text}
-                </p>
+                  dangerouslySetInnerHTML={{ __html: block.text || '' }}
+                />
               )}
 
               {/* IMAGE BLOCK */}
@@ -614,10 +626,103 @@ export const PostDetail: React.FC<PostDetailProps> = ({
             />
             <button
               onClick={() => setZoomedImage(null)}
-              className="absolute top-4 right-4 bg-black/60 hover:bg-black text-white p-2 rounded-full"
+              className="absolute top-4 right-4 bg-black/60 hover:bg-black text-white p-2 rounded-full cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Password Verification Modal for Edit & Delete */}
+      {passwordModalAction && (
+        <div
+          onClick={() => setPasswordModalAction(null)}
+          className="fixed inset-0 z-70 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-xl border border-stone-200 max-w-sm w-full p-6 space-y-4 animate-in zoom-in-95 duration-150"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-[#03C75A]/10 text-[#03C75A] flex items-center justify-center">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <h3 className="font-bold text-base text-stone-900">
+                  {passwordModalAction === 'edit' ? '글 수정 비밀번호' : '글 삭제 비밀번호'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPasswordModalAction(null)}
+                className="text-stone-400 hover:text-stone-600 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-500 leading-relaxed">
+              {passwordModalAction === 'edit'
+                ? '글 작성 시 등록한 비밀번호를 입력해주세요.'
+                : '글을 삭제하려면 작성 시 등록한 비밀번호를 입력해주세요.'}
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!post.password || inputPassword === post.password) {
+                  const action = passwordModalAction;
+                  setPasswordModalAction(null);
+                  setInputPassword('');
+                  setPasswordError('');
+                  if (action === 'edit') {
+                    onEdit(post);
+                  } else if (action === 'delete') {
+                    onDelete(post.id);
+                  }
+                } else {
+                  setPasswordError('비밀번호가 일치하지 않습니다. 다시 확인해주세요.');
+                }
+              }}
+              className="space-y-3"
+            >
+              <div>
+                <input
+                  type="password"
+                  autoFocus
+                  value={inputPassword}
+                  onChange={(e) => {
+                    setInputPassword(e.target.value);
+                    if (passwordError) setPasswordError('');
+                  }}
+                  placeholder="비밀번호 입력"
+                  className={`w-full text-xs sm:text-sm bg-stone-50 border rounded-lg px-3 py-2 text-stone-800 focus:bg-white focus:outline-none focus:border-[#03C75A] ${
+                    passwordError ? 'border-rose-400 bg-rose-50/50' : 'border-stone-200'
+                  }`}
+                />
+                {passwordError && (
+                  <p className="text-xs text-rose-500 mt-1.5 font-medium">{passwordError}</p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPasswordModalAction(null)}
+                  className="px-3 py-1.5 text-xs font-semibold text-stone-600 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer"
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  disabled={!inputPassword.trim()}
+                  className="px-4 py-1.5 text-xs font-bold text-white bg-[#03C75A] hover:bg-[#02b350] disabled:opacity-40 rounded-lg transition-colors cursor-pointer"
+                >
+                  확인
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
